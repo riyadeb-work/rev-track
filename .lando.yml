@@ -1,0 +1,4 @@
+name: rev-track
+recipe: lamp
+config:
+  webroot: .
