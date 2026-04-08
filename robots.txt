@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+Point to your sitemap so AI and search bots can index your app easily
+
+Sitemap: https://www.google.com/search?q=https://revtrack.meghive.com/sitemap.xml
