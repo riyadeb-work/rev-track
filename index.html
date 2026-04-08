@@ -68,6 +68,18 @@
         .slide-up { animation: slideUp 0.4s ease-out forwards; }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
     </style>
+    
+    <!-- Pre-load global error handler to catch missing module files -->
+    <script>
+        window.addEventListener('error', function(e) {
+            if (e.target && e.target.tagName === 'SCRIPT') {
+                const loader = document.getElementById('view-loader');
+                const errorView = document.getElementById('view-error');
+                if (loader) loader.classList.add('hidden');
+                if (errorView) errorView.classList.remove('hidden');
+            }
+        }, true);
+    </script>
 </head>
 <body>
 
@@ -89,6 +101,23 @@
     <div id="view-loader" class="flex-1 flex flex-col items-center justify-center bg-gray-50 z-50 absolute inset-0">
         <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
         <p class="mt-4 text-gray-500 font-medium">Loading Data...</p>
+    </div>
+
+    <!-- ERROR VIEW -->
+    <div id="view-error" class="flex-1 flex flex-col items-center justify-center p-6 bg-white hidden z-50 absolute inset-0">
+        <div class="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-6 shadow-sm">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2 text-center">Service Unavailable</h2>
+        <p id="error-message-text" class="text-gray-500 text-center mb-8">We couldn't connect to our servers. Please check your connection or try again later.</p>
+        
+        <a id="btn-report-error" href="mailto:contact@meghive.com?subject=REV%20TRACK%20Error" class="w-full bg-blue-600 text-white font-medium py-3 px-4 rounded-xl shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2 mb-4">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+            Report Issue to Support
+        </a>
+        <button onclick="window.location.reload()" class="w-full bg-white border border-gray-300 text-gray-700 font-medium py-3 px-4 rounded-xl shadow-sm hover:bg-gray-50 transition">
+            Reload Page
+        </button>
     </div>
 
     <!-- AUTH VIEW -->
@@ -355,14 +384,57 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    
-    // Import the Firebase configuration from our external file so it's not tracked in Git.
-    import { firebaseConfig } from './firebase-config.js';
 
-    // --- FIREBASE SETUP ---
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    // --- DOM ELEMENTS ---
+    const views = {
+        'view-loader': document.getElementById('view-loader'),
+        'view-error': document.getElementById('view-error'),
+        'view-auth': document.getElementById('view-auth'),
+        'view-garage': document.getElementById('view-garage'),
+        'view-dashboard': document.getElementById('view-dashboard'),
+        'view-vehicle-form': document.getElementById('view-vehicle-form'),
+        'view-log-form': document.getElementById('view-log-form'),
+        'view-privacy': document.getElementById('view-privacy'),
+        'view-contact': document.getElementById('view-contact')
+    };
+    const appHeader = document.getElementById('app-header');
+    const btnBackGarage = document.getElementById('btn-back-garage');
+    const headerTitle = document.getElementById('header-title');
+    
+    // --- ERROR HANDLING LOGIC ---
+    window.showErrorView = (errorMsg, errorCode = 'UNKNOWN') => {
+        Object.values(views).forEach(el => el && el.classList.add('hidden'));
+        appHeader.classList.add('hidden');
+        document.getElementById('view-error').classList.remove('hidden');
+
+        document.getElementById('error-message-text').innerText = errorMsg;
+
+        // Prepare the pre-filled mailto link for seamless user reporting
+        const mailtoBtn = document.getElementById('btn-report-error');
+        const subject = encodeURIComponent(`REV TRACK Error Report: ${errorCode}`);
+        const body = encodeURIComponent(`Hi Meghive Support,\n\nI encountered an error while using REV TRACK.\n\nError Code: ${errorCode}\nDetails: ${errorMsg}\nTime: ${new Date().toISOString()}\n\nPlease look into this.`);
+        mailtoBtn.href = `mailto:contact@meghive.com?subject=${subject}&body=${body}`;
+    };
+
+    // Catch unhandled promises (like configuration loading failures)
+    window.addEventListener('unhandledrejection', (event) => {
+        console.error('Unhandled Rejection:', event.reason);
+        showErrorView("We couldn't connect to our servers. Please check your internet connection or try again later.", "CONNECTION_ERROR");
+    });
+
+    // --- FIREBASE SETUP & DYNAMIC CONFIG LOAD ---
+    let app, auth, db;
+    try {
+        // Dynamically import the config to safely catch 404 errors if the file is missing
+        const configModule = await import('./firebase-config.js');
+        app = initializeApp(configModule.firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+    } catch (error) {
+        console.error("Firebase config missing or invalid:", error);
+        window.showErrorView("Configuration file missing. Please ensure 'firebase-config.js' is uploaded to the server.", "CONFIG_MISSING");
+        throw new Error("Halt execution due to missing config file"); // Stops the rest of the script
+    }
 
     // --- STATE ---
     let currentUser = null;
@@ -379,28 +451,11 @@
         { item: 'Tyres', intervalKm: 40000, intervalMonths: 60 }
     ];
 
-    // --- DOM ELEMENTS ---
-    const views = {
-        'view-loader': document.getElementById('view-loader'),
-        'view-auth': document.getElementById('view-auth'),
-        'view-garage': document.getElementById('view-garage'),
-        'view-dashboard': document.getElementById('view-dashboard'),
-        'view-vehicle-form': document.getElementById('view-vehicle-form'),
-        'view-log-form': document.getElementById('view-log-form'),
-        'view-privacy': document.getElementById('view-privacy'),
-        'view-contact': document.getElementById('view-contact')
-    };
-    const appHeader = document.getElementById('app-header');
-    const btnBackGarage = document.getElementById('btn-back-garage');
-    const headerTitle = document.getElementById('header-title');
-    
     // --- PWA INSTALL LOGIC ---
     let deferredPrompt;
     window.addEventListener('beforeinstallprompt', (e) => {
-        // Prevent Chrome 67 and earlier from automatically showing the prompt
         e.preventDefault();
         deferredPrompt = e;
-        // Update UI to notify the user they can add to home screen
         document.getElementById('pwa-install-prompt').classList.remove('hidden');
     });
 
@@ -418,7 +473,7 @@
         document.getElementById('pwa-install-prompt').classList.add('hidden');
     });
 
-    // --- NOTIFICATION LOGIC (Option 1: Frontend On-Open) ---
+    // --- NOTIFICATION LOGIC ---
     const requestNotificationPermission = () => {
         if ('Notification' in window && Notification.permission === 'default') {
             Notification.requestPermission();
@@ -428,12 +483,10 @@
     const triggerNotification = (title, options) => {
         if ('Notification' in window && Notification.permission === 'granted') {
             if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                // Best for mobile: use service worker if available
                 navigator.serviceWorker.ready.then(registration => {
                     registration.showNotification(title, options);
                 });
             } else {
-                // Fallback for desktop
                 new Notification(title, options);
             }
         }
@@ -483,8 +536,8 @@
 
     // --- UTILS / UI ---
     window.switchView = (viewId) => {
-        Object.values(views).forEach(el => el.classList.add('hidden'));
-        views[viewId].classList.remove('hidden');
+        Object.values(views).forEach(el => el && el.classList.add('hidden'));
+        if (views[viewId]) views[viewId].classList.remove('hidden');
         
         // Header logic
         if (viewId === 'view-garage') {
@@ -494,7 +547,7 @@
         } else if (viewId === 'view-dashboard') {
             appHeader.classList.remove('hidden');
             btnBackGarage.classList.remove('hidden');
-        } else if (viewId === 'view-auth' || viewId === 'view-loader') {
+        } else if (viewId === 'view-auth' || viewId === 'view-loader' || viewId === 'view-error') {
             appHeader.classList.add('hidden');
         }
     };
@@ -560,13 +613,19 @@
             await signInWithPopup(auth, provider);
         } catch (error) {
             console.error("Google Auth Error:", error);
+            if (error.code === 'auth/popup-closed-by-user') return; // User simply closed the popup
+            showErrorView("Google Sign-In is currently unavailable. Please try again or continue as a guest.", error.code);
         }
     });
 
     document.getElementById('btn-guest-login').addEventListener('click', async () => {
         switchView('view-loader');
-        try { await signInAnonymously(auth); } 
-        catch (e) { showModal("Error", "Could not sign in."); switchView('view-auth'); }
+        try { 
+            await signInAnonymously(auth); 
+        } catch (error) { 
+            console.error("Guest Auth Error:", error);
+            showErrorView("Guest login is temporarily unavailable due to server limits.", error.code);
+        }
     });
 
     document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
@@ -608,12 +667,22 @@
                     renderGarage();
                 }
             }
+        }, (error) => {
+            console.error("Vehicle fetch error:", error);
+            if (error.code === 'resource-exhausted' || error.code === 'quota-exceeded') {
+                showErrorView("Our daily server capacity has been reached. We will be back online shortly!", "QUOTA_EXCEEDED");
+            } else {
+                showErrorView("Unable to load your vehicle data.", error.code);
+            }
         });
 
         const lQuery = collection(db, getCollectionPath('logs'));
         unsubLogs = onSnapshot(lQuery, (snapshot) => {
             logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             if (activeVehicleId) renderDashboard();
+        }, (error) => {
+            console.error("Log fetch error:", error);
+            // Only need to show error once, vehicle fetch will likely catch quota issues too
         });
     };
 
@@ -831,7 +900,11 @@
         showModal('Update Odometer', `Enter new current odometer reading (Current: ${v.currentOdo} KM):`, true, async (val) => {
             const newOdo = parseInt(val);
             if (!isNaN(newOdo) && newOdo >= v.currentOdo) {
-                await updateDoc(doc(db, getCollectionPath('vehicles'), activeVehicleId), { currentOdo: newOdo });
+                try {
+                    await updateDoc(doc(db, getCollectionPath('vehicles'), activeVehicleId), { currentOdo: newOdo });
+                } catch (error) {
+                    showModal('Error', 'Unable to update odometer due to server error.');
+                }
             } else if (newOdo < v.currentOdo) {
                 showModal('Error', 'New reading cannot be less than current reading.');
             }
@@ -925,7 +998,9 @@
                 activeVehicleId = docRef.id;
                 renderDashboard();
             }
-        } catch (err) { showModal("Error", "Could not save vehicle."); }
+        } catch (error) { 
+            showErrorView("Could not save vehicle. The server may be busy.", error.code); 
+        }
     });
 
     // --- LOG FORM LOGIC ---
@@ -965,13 +1040,18 @@
                 await updateDoc(doc(db, getCollectionPath('vehicles'), activeVehicleId), { currentOdo: odo });
             }
             switchView('view-dashboard');
-        } catch (err) { showModal("Error", "Could not save log."); }
+        } catch (error) { 
+            showErrorView("Could not save the service log. Please check your connection.", error.code); 
+        }
     });
 
     window.deleteLog = (id) => {
         showModal("Delete", "Delete this record?", false, async () => {
-            try { await deleteDoc(doc(db, getCollectionPath('logs'), id)); } 
-            catch (e) {}
+            try { 
+                await deleteDoc(doc(db, getCollectionPath('logs'), id)); 
+            } catch (error) {
+                showModal("Error", "Unable to delete record from the server.");
+            }
         });
     };
 
