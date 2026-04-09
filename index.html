@@ -586,7 +586,8 @@
         }
     };
 
-    const showModal = (title, message, isPrompt = false, confirmCallback = null) => {
+    // Updated showModal to optionally show a cancel button even when not prompting for input
+    const showModal = (title, message, isPrompt = false, confirmCallback = null, showCancelBtn = false) => {
         const modal = document.getElementById('custom-modal');
         const content = document.getElementById('modal-content');
         const input = document.getElementById('modal-input');
@@ -603,7 +604,11 @@
             btnCancel.classList.remove('hidden');
         } else {
             input.classList.add('hidden');
-            btnCancel.classList.add('hidden');
+            if (showCancelBtn) {
+                btnCancel.classList.remove('hidden');
+            } else {
+                btnCancel.classList.add('hidden');
+            }
         }
 
         modal.classList.remove('hidden');
@@ -767,7 +772,7 @@
             } catch (error) {
                 showModal("Error", "Failed to delete the vehicle.");
             }
-        });
+        }, true); // The 'true' parameter forces the Cancel button to show
     };
 
     // --- RENDER DASHBOARD ---
@@ -1076,7 +1081,7 @@
             } catch (error) {
                 showModal("Error", "Unable to delete record from the server.");
             }
-        });
+        }, true); // The 'true' parameter forces the Cancel button to show
     };
 
     // --- SERVICE WORKER REGISTRATION (Required for WebAPK native install) ---
