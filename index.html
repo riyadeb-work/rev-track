@@ -54,10 +54,10 @@
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #e5e7eb; display: flex; justify-content: center; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; }
+        /* Locked body height prevents bouncy scrolling issues on mobile */
+        body { background-color: #e5e7eb; display: flex; justify-content: center; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }
         
-        /* 100dvh accounts for mobile browser address bars */
-        #app-container { width: 100%; max-width: 480px; height: 100vh; height: 100dvh; background-color: #ffffff; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); position: relative; overflow: hidden; display: flex; flex-direction: column; }
+        #app-container { width: 100%; max-width: 480px; height: 100%; background-color: #ffffff; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); position: relative; display: flex; flex-direction: column; }
         
         .hidden { display: none !important; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
@@ -176,7 +176,7 @@
     </div>
 
     <!-- DASHBOARD VIEW -->
-    <div id="view-dashboard" class="flex-1 overflow-y-auto bg-gray-100 hidden fade-in pb-32">
+    <div id="view-dashboard" class="flex-1 overflow-y-auto bg-gray-100 hidden fade-in pb-24">
         
         <div class="bg-white p-5 rounded-b-2xl shadow-sm mb-4 border-t border-gray-100">
             <div class="flex justify-between items-start mb-4">
@@ -215,10 +215,6 @@
             <div id="logs-list" class="space-y-3">
                 </div>
         </div>
-
-        <button id="fab-add-log" onclick="openLogForm()" class="absolute bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transition flex items-center justify-center z-20">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-        </button>
     </div>
 
     <!-- PRIVACY PAGE -->
@@ -377,6 +373,11 @@
         </div>
         <button id="btn-install-pwa" class="mt-4 w-full bg-blue-600 text-white font-medium py-3 rounded-xl shadow-md hover:bg-blue-700 transition">Install App</button>
     </div>
+    
+    <!-- FLOATING ACTION BUTTON (Anchored securely to the global app container) -->
+    <button id="fab-add-log" onclick="openLogForm()" class="absolute bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transition flex items-center justify-center z-40 hidden">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+    </button>
 
 </div>
 
@@ -384,6 +385,9 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    // Import the Firebase configuration from our external file so it's not tracked in Git.
+    import { firebaseConfig } from './firebase-config.js';
 
     // --- DOM ELEMENTS ---
     const views = {
@@ -400,11 +404,13 @@
     const appHeader = document.getElementById('app-header');
     const btnBackGarage = document.getElementById('btn-back-garage');
     const headerTitle = document.getElementById('header-title');
+    const fabAddLog = document.getElementById('fab-add-log');
     
     // --- ERROR HANDLING LOGIC ---
     window.showErrorView = (errorMsg, errorCode = 'UNKNOWN') => {
         Object.values(views).forEach(el => el && el.classList.add('hidden'));
         appHeader.classList.add('hidden');
+        if (fabAddLog) fabAddLog.classList.add('hidden');
         document.getElementById('view-error').classList.remove('hidden');
 
         document.getElementById('error-message-text').innerText = errorMsg;
@@ -475,61 +481,74 @@
 
     // --- NOTIFICATION LOGIC ---
     const requestNotificationPermission = () => {
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
+        try {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        } catch (e) {
+            console.error("Notification permission error:", e);
         }
     };
 
     const triggerNotification = (title, options) => {
-        if ('Notification' in window && Notification.permission === 'granted') {
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                navigator.serviceWorker.ready.then(registration => {
-                    registration.showNotification(title, options);
-                });
-            } else {
-                new Notification(title, options);
+        try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.ready.then(registration => {
+                        registration.showNotification(title, options);
+                    });
+                } else {
+                    new Notification(title, options);
+                }
             }
+        } catch (e) {
+            console.error("Failed to trigger notification:", e);
         }
     };
 
     const checkAndShowNotifications = (vehicle, healthItems) => {
-        if ('Notification' in window && Notification.permission !== 'granted') return;
+        try {
+            // Strict check to prevent halts in browsers where Notification is disabled/unsupported
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
-        const currentHour = now.getHours();
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+            const currentHour = now.getHours();
 
-        // 1. Odometer Reminder
-        let timeLabel = 'today';
-        let timeSlot = 'other';
-        
-        if (currentHour >= 8 && currentHour < 11) { 
-            timeLabel = 'this morning'; 
-            timeSlot = 'morning'; 
-        } else if (currentHour >= 18 && currentHour < 21) { 
-            timeLabel = 'this evening'; 
-            timeSlot = 'evening'; 
-        }
-
-        const odoKey = `revtrack_odo_rem_${todayStr}_${timeSlot}`;
-        if (!localStorage.getItem(odoKey)) {
-            triggerNotification("Update Odometer", {
-                body: `Don't forget to update your odometer reading for ${vehicle.name} ${timeLabel}!`,
-            });
-            localStorage.setItem(odoKey, 'true');
-        }
-
-        // 2. Maintenance Reminder (>90% due)
-        const dueItems = healthItems.filter(item => item.progressPct >= 90);
-        if (dueItems.length > 0) {
-            const maintKey = `revtrack_maint_rem_${todayStr}_${vehicle.id}`;
-            if (!localStorage.getItem(maintKey)) {
-                const itemNames = dueItems.map(i => i.name).join(', ');
-                triggerNotification("Maintenance Alert", {
-                    body: `Service required soon for ${vehicle.name}: ${itemNames}.`,
-                });
-                localStorage.setItem(maintKey, 'true');
+            // 1. Odometer Reminder
+            let timeLabel = 'today';
+            let timeSlot = 'other';
+            
+            if (currentHour >= 8 && currentHour < 11) { 
+                timeLabel = 'this morning'; 
+                timeSlot = 'morning'; 
+            } else if (currentHour >= 18 && currentHour < 21) { 
+                timeLabel = 'this evening'; 
+                timeSlot = 'evening'; 
             }
+
+            const odoKey = `revtrack_odo_rem_${todayStr}_${timeSlot}`;
+            if (!localStorage.getItem(odoKey)) {
+                triggerNotification("Update Odometer", {
+                    body: `Don't forget to update your odometer reading for ${vehicle.name} ${timeLabel}!`,
+                });
+                localStorage.setItem(odoKey, 'true');
+            }
+
+            // 2. Maintenance Reminder (>90% due)
+            const dueItems = healthItems.filter(item => item.progressPct >= 90);
+            if (dueItems.length > 0) {
+                const maintKey = `revtrack_maint_rem_${todayStr}_${vehicle.id}`;
+                if (!localStorage.getItem(maintKey)) {
+                    const itemNames = dueItems.map(i => i.name).join(', ');
+                    triggerNotification("Maintenance Alert", {
+                        body: `Service required soon for ${vehicle.name}: ${itemNames}.`,
+                    });
+                    localStorage.setItem(maintKey, 'true');
+                }
+            }
+        } catch (e) {
+            console.error("Notification logic skipped cleanly:", e);
         }
     };
 
@@ -539,16 +558,21 @@
         Object.values(views).forEach(el => el && el.classList.add('hidden'));
         if (views[viewId]) views[viewId].classList.remove('hidden');
         
-        // Header logic
+        // Header & FAB logic
         if (viewId === 'view-garage') {
             appHeader.classList.remove('hidden');
             btnBackGarage.classList.add('hidden');
             headerTitle.innerText = "REV TRACK";
+            if (fabAddLog) fabAddLog.classList.add('hidden');
         } else if (viewId === 'view-dashboard') {
             appHeader.classList.remove('hidden');
             btnBackGarage.classList.remove('hidden');
+            if (fabAddLog) fabAddLog.classList.remove('hidden');
         } else if (viewId === 'view-auth' || viewId === 'view-loader' || viewId === 'view-error') {
             appHeader.classList.add('hidden');
+            if (fabAddLog) fabAddLog.classList.add('hidden');
+        } else {
+            if (fabAddLog) fabAddLog.classList.add('hidden');
         }
     };
 
@@ -863,7 +887,7 @@
             healthList.innerHTML = `<p class="text-sm text-gray-500 text-center py-2">No maintenance schedules set.</p>`;
         }
 
-        // Fire any required notifications for the current vehicle view
+        // Fire any required notifications safely
         checkAndShowNotifications(activeV, healthDataForNotifications);
 
         // Render Recent Logs
